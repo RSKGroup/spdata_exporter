@@ -49,7 +49,7 @@ func init() {
 
 func main() {
 	// Define flags
-	configFile := flag.String("config", "systemprof_exporter.yml", "Path to the config file")
+	configFile := flag.String("config", "spdata_exporter.yml", "Path to the config file")
 	flag.Parse()
 
 	// Load the configuration file
