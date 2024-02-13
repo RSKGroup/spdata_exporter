@@ -7,8 +7,7 @@
     <key>ProgramArguments</key>
 	<array>
 		 <string>/usr/local/bin/spdata_exporter</string>
-		 <string>--config</string>
-		 <string>/usr/local/etc/spdata_exporter.yml</string>
+		 <string>-config=/usr/local/etc/spdata_exporter.yml</string>
 	</array> 
 	<key>RunAtLoad</key>
 	<true/>
