@@ -1,0 +1,6 @@
+port: 9104
+data_types:
+  - SPHardwareDataType
+  - SPStorageDataType
+  - SPDisplaysDataType
+  - SPSoftwareDataType
