@@ -26,7 +26,7 @@ It's a go app...
 Run
 ---
 ```shell
-spdata_exporter -config=/usr/local/etc/spdata_exporter.yml
+spdata_exporter --config /usr/local/etc/spdata_exporter.yml
 ```
 
 Flags
