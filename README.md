@@ -108,6 +108,7 @@ Contribute
 If you like system_profiler Exporter, please give us a star. This will help more people know system_profiler Exporter.
 
 Please feel free to send me [pull requests](https://github.com/rskgroup/spdata_exporter/pulls).
+
 License
 -------
 Code is licensed under the [Apache License 2.0](https://github.com/danielqsj/kafka_exporter/blob/master/LICENSE).
