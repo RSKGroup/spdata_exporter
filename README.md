@@ -106,7 +106,7 @@ spdata_spstoragedatatype{device="0",name="mount_point",value="/System/Volumes/Da
 
 Additionally, this tool exports the following data:
 - Core File Count and Cores from FSM
-- cvlabel -l count
+- cvlabel -l|wc -l count
 - Latest Time Machine backup time
 <pre>
 # HELP spdata_corefilescount Metric spdata_corefilescount dynamically created
