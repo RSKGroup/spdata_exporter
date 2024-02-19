@@ -103,6 +103,24 @@ spdata_spstoragedatatype{device="0",name="free_space_in_bytes",value="1.87737187
 spdata_spstoragedatatype{device="0",name="ignore_ownership",value="no"} 1
 spdata_spstoragedatatype{device="0",name="mount_point",value="/System/Volumes/Data"} 1
 </pre>
+
+Additionally, this tool exports the following data:
+- Core File Count and Cores from FSM
+- cvlabel -l count
+- Latest Time Machine backup time
+<pre>
+# HELP spdata_corefilescount Metric spdata_corefilescount dynamically created
+# TYPE spdata_corefilescount gauge
+spdata_corefilescount{device="0",name="fsm",value="0"} 0
+spdata_corefilescount{device="0",name="total",value="0"} 0
+# HELP spdata_cvlabelcount Metric spdata_cvlabelcount dynamically created
+# TYPE spdata_cvlabelcount gauge
+spdata_cvlabelcount{device="0",name="cvlabel",value="22"} 22
+# HELP spdata_latestbackuptime Metric spdata_latestbackuptime dynamically created
+# TYPE spdata_latestbackuptime gauge
+spdata_latestbackuptime{device="0",name="latestbackup",value="2024-02-19-111614"} 1
+</pre>
+
 Contribute
 ----------
 If you like system_profiler Exporter, please give us a star. This will help more people know system_profiler Exporter.
