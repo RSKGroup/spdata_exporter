@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -58,6 +61,7 @@ func main() {
 		fmt.Println("Error reading the config file:", err)
 		os.Exit(1)
 	}
+
 	// Parse the configuration file
 	var config Config
 	err = yaml.Unmarshal(configData, &config)
@@ -85,38 +89,69 @@ func main() {
 		pairs = append(pairs, dataPairs...)
 	}
 
-	// Now that we have the data in pairs, we can format it as Prometheus-formatted data
-	// Assuming spDataMetric is defined and registered as shown in the previous examples
+	// Process the pairs and format them as Prometheus metrics
 	for _, pair := range pairs {
+		pair = strings.ReplaceAll(pair, "-", "_")
 		pairSplit := strings.Split(pair, ", ")
 		if len(pairSplit) < 4 {
 			fmt.Println("Invalid pair format:", pair)
 			continue
 		}
 
-		metricName := "spdata_" + strings.ToLower(pairSplit[0]) // Transform to Prometheus metric name convention.
+		metricName := "spdata_" + strings.ToLower(pairSplit[0])
 		device := pairSplit[1]
-		name := strings.Join(pairSplit[2:len(pairSplit)-1], "_") // Combine label names.
-		value := pairSplit[len(pairSplit)-1]
+		name := strings.Join(pairSplit[2:len(pairSplit)-1], "-") // Ensure underscores are used
+		valueStr := pairSplit[len(pairSplit)-1]
 
-		// Retrieve or create a GaugeVec for the metric.
-		gaugeVec := ensureMetricExists(metricName) // This function needs to implement dynamic GaugeVec creation or retrieval.
+		// Retrieve or create a GaugeVec for the metric
+		gaugeVec := ensureMetricExists(metricName)
 
-		// Set the gauge with labels.
-		gaugeVec.WithLabelValues(device, name, value).Set(1)
+		// Try parsing valueStr as float64 first
+		valueFloat, err := strconv.ParseFloat(valueStr, 64)
+		if err == nil {
+			// If parsing is successful, convert to int64 and use it
+			gaugeVec.WithLabelValues(device, name, strconv.FormatInt(int64(valueFloat), 10)).Set(valueFloat)
+		} else {
+			// If parsing fails, use valueStr as is and set gauge to 1
+			gaugeVec.WithLabelValues(device, name, valueStr).Set(1)
+		}
+	}
+	// Get the count of cvlabel labels
+	cvLabelCount, err := getCVLabelCount()
+	if err != nil {
+		fmt.Println("Error getting cvlabel count:", err)
+	}
+	// Build the cvlabel count metric
+	cvLabelCountMetric := ensureMetricExists("spdata_cvlabelcount")
+	cvLabelCountMetric.WithLabelValues("0", "cvlabel", strconv.Itoa(cvLabelCount)).Set(float64(cvLabelCount))
+
+	// Get the latest backup time
+	latestBackupTime, err := getLatestBackupTime()
+	if err != nil {
+		fmt.Println("Error getting latest backup time:", err)
+	}
+	// Build the latest backup time metric
+	latestBackupTimeMetric := ensureMetricExists("spdata_latestbackuptime")
+	if latestBackupTime == "" {
+		latestBackupTimeMetric.WithLabelValues("0", "latestbackup", "").Set(0)
+	} else {
+		latestBackupTimeMetric.WithLabelValues("0", "latestbackup", latestBackupTime).Set(1)
 	}
 
-	// Register Prometheus metrics handler
-	http.Handle("/metrics", promhttp.Handler())
+	// Get the count of core files
+	fsmCount, totalCount, err := countCoresFiles()
+	// Build the core files count metric
+	coreFilesCountMetric := ensureMetricExists("spdata_corefilescount")
+	coreFilesCountMetric.WithLabelValues("0", "total", strconv.Itoa(totalCount)).Set(float64(totalCount))
+	coreFilesCountMetric.WithLabelValues("0", "fsm", strconv.Itoa(fsmCount)).Set(float64(fsmCount))
 
-	// Start HTTP server to expose metrics
+	// Register Prometheus metrics handler and start HTTP server
+	http.Handle("/metrics", promhttp.Handler())
 	addr := fmt.Sprintf(":%d", config.Port)
 	fmt.Printf("Starting server on port %d\n", config.Port)
-	err = http.ListenAndServe(addr, nil)
-	if err != nil {
+	if err := http.ListenAndServe(addr, nil); err != nil {
 		fmt.Println("Error starting HTTP server:", err)
 	}
-
 }
 
 // get the system_profiler data requested from the configuration file
@@ -206,4 +241,55 @@ func ensureMetricExists(metricName string) *prometheus.GaugeVec {
 	}
 	// Return the loaded GaugeVec if found.
 	return metric.(*prometheus.GaugeVec)
+}
+
+// getCVLabelCount executes the command and returns the count as an int
+func getCVLabelCount() (int, error) {
+	cmd := exec.Command("sh", "-c", "cvlabel -l | wc -l")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	err := cmd.Run()
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(strings.TrimSpace(out.String()))
+}
+
+// getLatestBackupTime executes the command and returns the output as a string
+func getLatestBackupTime() (string, error) {
+	cmd := exec.Command("tmutil", "latestbackup", "-t")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	err := cmd.Run()
+	if err != nil {
+		return "", err
+	}
+	// strip the newline character from the output
+	out = *bytes.NewBuffer(bytes.TrimRight(out.Bytes(), "\n"))
+	return out.String(), nil
+}
+
+// countCoresFiles counts the number of files in the /cores directory
+func countCoresFiles() (int, int, error) {
+	var fsmCount, totalCount int
+
+	err := filepath.Walk("/cores", func(path string, info fs.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			totalCount++ // Increment total file count for every file
+			// Check if file starts with the pattern 'core.fsm'
+			if strings.HasPrefix(filepath.Base(path), "core.fsm") {
+				fsmCount++ // Increment fsmCount if the file matches the pattern
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		return 0, 0, err
+	}
+
+	return fsmCount, totalCount, nil
 }
