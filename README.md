@@ -21,7 +21,16 @@ Download
 
 Compile
 -------
-It's a go app...
+1. Install the XCode Command Line Tools
+2. Install go 1.20+
+3. Clone the repository
+4. Build your version:
+  - `GOOS=darwin GOARCH=amd64 go build -o spdata_exporter-amd64`
+  - `GOOS=darwin GOARCH=arm64 go build -o spdata_exporter-arm64`
+6. If desired, create a universal with
+  - `lipo -create -output spdata_exporter spdata_exporter-amd64 spdata_exporter-arm64`
+7. Sign whichever version or the universal with
+  - `codesign --deep --force --verbose --sign "your-developer-cert" your-executable`
 
 Run
 ---
