@@ -145,6 +145,32 @@ func main() {
 	coreFilesCountMetric.WithLabelValues("0", "total", strconv.Itoa(totalCount)).Set(float64(totalCount))
 	coreFilesCountMetric.WithLabelValues("0", "fsm", strconv.Itoa(fsmCount)).Set(float64(fsmCount))
 
+	// Get NTP stats
+	ntpServer, ntpStatus, timeZone, err := getNTPStats()
+	if err != nil {
+		fmt.Println("Error getting NTP stats:", err)
+	}
+	// Build the NTP metrics
+	ntpServerMetric := ensureMetricExists("spdata_ntpserver")
+	// if data is empty, set the metric to 0
+	if ntpServer == "" {
+		ntpServerMetric.WithLabelValues("0", "ntpserver", "").Set(0)
+	} else {
+		ntpServerMetric.WithLabelValues("0", "ntpserver", ntpServer).Set(1)
+	}
+	if ntpStatus == "" {
+		ntpServerMetric.WithLabelValues("0", "ntpstatus", "").Set(0)
+	} else if ntpStatus == "Off" {
+		ntpServerMetric.WithLabelValues("0", "ntpstatus", ntpStatus).Set(0)
+	} else {
+		ntpServerMetric.WithLabelValues("0", "ntpstatus", ntpStatus).Set(1)
+	}
+	if timeZone == "" {
+		ntpServerMetric.WithLabelValues("0", "timezone", "").Set(0)
+	} else {
+		ntpServerMetric.WithLabelValues("0", "timezone", timeZone).Set(1)
+	}
+
 	// Register Prometheus metrics handler and start HTTP server
 	http.Handle("/metrics", promhttp.Handler())
 	addr := fmt.Sprintf(":%d", config.Port)
@@ -292,4 +318,75 @@ func countCoresFiles() (int, int, error) {
 	}
 
 	return fsmCount, totalCount, nil
+}
+
+// Get NTP status from /usr/sbin/systemsetup using:
+//
+//	/usr/sbin/systemsetup -getnetworktimeserver
+//	/usr/sbin/systemsetup -getusingnetworktime
+//	/usr/sbin/systemsetup -gettimezone
+func getNTPStats() (string, string, string, error) {
+	var ntpServer, ntpStatus, timeZone string
+
+	// Get the NTP server
+	cmd := exec.Command("/usr/sbin/systemsetup", "-getnetworktimeserver")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	err := cmd.Run()
+	// If we err, continue with the next command setting the output to an empty string
+	if err == nil {
+		// Parse the output to extract the NTP server address
+		output := strings.TrimSpace(out.String())
+		parts := strings.Split(output, ": ")
+		if len(parts) == 2 {
+			ntpServer = parts[1]
+		} else {
+			// Handle unexpected output format
+			ntpServer = ""
+		}
+	} else {
+		ntpServer = ""
+	}
+	// Get the NTP status
+	cmd = exec.Command("/usr/sbin/systemsetup", "-getusingnetworktime")
+	out.Reset()
+	cmd.Stdout = &out
+	err = cmd.Run()
+	// If we err, continue with the next command setting the output to an empty string
+	if err == nil {
+		// Parse the output to extract the NTP status
+		output := strings.TrimSpace(out.String())
+		parts := strings.Split(output, ": ")
+		if len(parts) == 2 {
+			ntpStatus = parts[1]
+		} else {
+			// Handle unexpected output format
+			ntpStatus = ""
+		}
+	} else {
+		ntpStatus = ""
+	}
+
+	// Get the timezone
+	cmd = exec.Command("/usr/sbin/systemsetup", "-gettimezone")
+	out.Reset()
+	cmd.Stdout = &out
+	err = cmd.Run()
+	// If we err, continue with the next command setting the output to an empty string
+	if err == nil {
+		// Parse the output to extract the timezone
+		output := strings.TrimSpace(out.String())
+		parts := strings.Split(output, ": ")
+		if len(parts) == 2 {
+			timeZone = parts[1]
+		} else {
+			// Handle unexpected output format
+			timeZone = ""
+		}
+	} else {
+		timeZone = ""
+	}
+
+	// Return values
+	return ntpServer, ntpStatus, timeZone, nil
 }
