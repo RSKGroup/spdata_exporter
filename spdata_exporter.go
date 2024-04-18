@@ -180,17 +180,37 @@ func main() {
 	}
 }
 
-// get the system_profiler data requested from the configuration file
-func getSystemProfilerData(dataType string) string {
-	// Run system_profiler
-	cmd := exec.Command("system_profiler", "-json", dataType)
-	// Store the output in a variable named after the dataType above
-	dataTypeOutput, err := cmd.Output()
-	if err != nil {
-		fmt.Println("Error running system_profiler:", err)
-		os.Exit(1)
+// ensureMetricExists checks if a GaugeVec for a given metric name exists;
+// if it does, it returns the existing GaugeVec.
+// If it doesn't, it creates a new GaugeVec, registers it, and returns it.
+func ensureMetricExists(metricName string) *prometheus.GaugeVec {
+	// Attempt to load an existing GaugeVec from the map.
+	metric, ok := dynamicMetrics.Load(metricName)
+	if !ok {
+		// If not found, create a new GaugeVec.
+		newMetric := prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: metricName,
+				Help: fmt.Sprintf("Metric %s dynamically created", metricName),
+			},
+			[]string{"device", "name", "value"},
+		)
+		// Register the new GaugeVec with Prometheus.
+		if err := prometheus.Register(newMetric); err != nil {
+			fmt.Printf("Error registering metric %s: %v\n", metricName, err)
+			// Handle the error, e.g., if the metric is already registered due to a race condition.
+			// This might happen if another goroutine has registered the metric between our `Load` and `Register` calls.
+			// In such a case, we attempt to load the metric again.
+			if existingMetric, ok := dynamicMetrics.Load(metricName); ok {
+				return existingMetric.(*prometheus.GaugeVec)
+			}
+		}
+		// Store the new GaugeVec in the map.
+		dynamicMetrics.Store(metricName, newMetric)
+		return newMetric
 	}
-	return string(dataTypeOutput)
+	// Return the loaded GaugeVec if found.
+	return metric.(*prometheus.GaugeVec)
 }
 
 // ConvertJsonToPairs converts JSON data into pairs of data type, labels, names, and values.
@@ -236,37 +256,17 @@ func processElement(prefix string, value interface{}, pairs *[]string, dataType,
 	}
 }
 
-// ensureMetricExists checks if a GaugeVec for a given metric name exists;
-// if it does, it returns the existing GaugeVec.
-// If it doesn't, it creates a new GaugeVec, registers it, and returns it.
-func ensureMetricExists(metricName string) *prometheus.GaugeVec {
-	// Attempt to load an existing GaugeVec from the map.
-	metric, ok := dynamicMetrics.Load(metricName)
-	if !ok {
-		// If not found, create a new GaugeVec.
-		newMetric := prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: metricName,
-				Help: fmt.Sprintf("Metric %s dynamically created", metricName),
-			},
-			[]string{"device", "name", "value"},
-		)
-		// Register the new GaugeVec with Prometheus.
-		if err := prometheus.Register(newMetric); err != nil {
-			fmt.Printf("Error registering metric %s: %v\n", metricName, err)
-			// Handle the error, e.g., if the metric is already registered due to a race condition.
-			// This might happen if another goroutine has registered the metric between our `Load` and `Register` calls.
-			// In such a case, we attempt to load the metric again.
-			if existingMetric, ok := dynamicMetrics.Load(metricName); ok {
-				return existingMetric.(*prometheus.GaugeVec)
-			}
-		}
-		// Store the new GaugeVec in the map.
-		dynamicMetrics.Store(metricName, newMetric)
-		return newMetric
+// get the system_profiler data requested from the configuration file
+func getSystemProfilerData(dataType string) string {
+	// Run system_profiler
+	cmd := exec.Command("system_profiler", "-json", dataType)
+	// Store the output in a variable named after the dataType above
+	dataTypeOutput, err := cmd.Output()
+	if err != nil {
+		fmt.Println("Error running system_profiler:", err)
+		os.Exit(1)
 	}
-	// Return the loaded GaugeVec if found.
-	return metric.(*prometheus.GaugeVec)
+	return string(dataTypeOutput)
 }
 
 // getCVLabelCount executes the command and returns the count as an int
