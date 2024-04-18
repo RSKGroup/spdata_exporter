@@ -117,6 +117,7 @@ Additionally, this tool exports the following data:
 - Core File Count and Cores from FSM
 - cvlabel -l|wc -l count
 - Latest Time Machine backup time
+- NTP date including NTP Server, Status, and Time Zone
 <pre>
 # HELP spdata_corefilescount Metric spdata_corefilescount dynamically created
 # TYPE spdata_corefilescount gauge
