@@ -43,7 +43,7 @@ data_types:
 #  - SPSASDataType
 #  - SPSerialATADataType
 #  - SPSPIDataType
-#  - SPSoftwareDataType
+  - SPSoftwareDataType
 #  - SPStartupItemDataType
 #  - SPSyncServicesDataType
 #  - SPThunderboltDataType

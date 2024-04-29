@@ -50,7 +50,9 @@ func init() {
 	prometheus.MustRegister(spDataMetric)
 }
 
+// Main function
 func main() {
+
 	// Define flags
 	configFile := flag.String("config", "spdata_exporter.yml", "Path to the config file")
 	flag.Parse()
@@ -69,114 +71,82 @@ func main() {
 		fmt.Println("Error parsing the config file:", err)
 		os.Exit(1)
 	}
+	// Setup HTTP server
+	http.HandleFunc("/metrics", updateMetricsHandler)
+	addr := fmt.Sprintf(":%d", config.Port)
+	fmt.Printf("Starting server on %s\n", addr)
+	if err := http.ListenAndServe(addr, nil); err != nil {
+		fmt.Println("Error starting HTTP server:", err)
+	}
+}
 
-	// Map to store outputs for each data type
+// updateMetricsHandler is an HTTP handler that updates the metrics and serves them
+func updateMetricsHandler(w http.ResponseWriter, r *http.Request) {
+	// Clear previous metric values
+	dynamicMetrics.Range(func(key, value interface{}) bool {
+		dynamicMetrics.Delete(key)
+		prometheus.Unregister(value.(*prometheus.GaugeVec))
+		return true
+	})
+
+	// Load configuration and run data collection
+	configData, err := os.ReadFile("spdata_exporter.yml")
+	if err != nil {
+		http.Error(w, "Error reading the config file", http.StatusInternalServerError)
+		return
+	}
+
+	var config Config
+	err = yaml.Unmarshal(configData, &config)
+	if err != nil {
+		http.Error(w, "Error parsing the config file", http.StatusInternalServerError)
+		return
+	}
+
 	dataTypeOutputs := make(map[string]string)
-
-	// Get the system_profiler data requested from the configuration file
 	for _, dataType := range config.DataTypes {
 		dataTypeOutputs[dataType] = getSystemProfilerData(dataType)
 	}
 
-	// Convert the system_profiler data to pairs
 	var pairs []string
 	for _, output := range dataTypeOutputs {
 		dataPairs, err := ConvertJsonToPairs(output)
 		if err != nil {
-			fmt.Println("Error converting JSON to pairs:", err)
-			os.Exit(1)
+			http.Error(w, "Error converting JSON to pairs", http.StatusInternalServerError)
+			return
 		}
 		pairs = append(pairs, dataPairs...)
 	}
 
-	// Process the pairs and format them as Prometheus metrics
+	// Process pairs and update metrics
 	for _, pair := range pairs {
-		pair = strings.ReplaceAll(pair, "-", "_")
-		pairSplit := strings.Split(pair, ", ")
-		if len(pairSplit) < 4 {
-			fmt.Println("Invalid pair format:", pair)
-			continue
-		}
-
-		metricName := "spdata_" + strings.ToLower(pairSplit[0])
-		device := pairSplit[1]
-		name := strings.Join(pairSplit[2:len(pairSplit)-1], "-") // Ensure underscores are used
-		valueStr := pairSplit[len(pairSplit)-1]
-
-		// Retrieve or create a GaugeVec for the metric
-		gaugeVec := ensureMetricExists(metricName)
-
-		// Try parsing valueStr as float64 first
-		valueFloat, err := strconv.ParseFloat(valueStr, 64)
-		if err == nil {
-			// If parsing is successful, convert to int64 and use it
-			gaugeVec.WithLabelValues(device, name, strconv.FormatInt(int64(valueFloat), 10)).Set(valueFloat)
-		} else {
-			// If parsing fails, use valueStr as is and set gauge to 1
-			gaugeVec.WithLabelValues(device, name, valueStr).Set(1)
-		}
+		processMetric(pair)
 	}
-	// Get the count of cvlabel labels
-	cvLabelCount, err := getCVLabelCount()
-	if err != nil {
-		fmt.Println("Error getting cvlabel count:", err)
-	}
-	// Build the cvlabel count metric
-	cvLabelCountMetric := ensureMetricExists("spdata_cvlabelcount")
-	cvLabelCountMetric.WithLabelValues("0", "cvlabel", strconv.Itoa(cvLabelCount)).Set(float64(cvLabelCount))
 
-	// Get the latest backup time
-	latestBackupTime, err := getLatestBackupTime()
-	if err != nil {
-		fmt.Println("Error getting latest backup time:", err)
+	// After updating the metrics, serve them
+	promhttp.Handler().ServeHTTP(w, r)
+}
+
+// Factor out the metric processing into a separate function
+func processMetric(pair string) {
+	pair = strings.ReplaceAll(pair, "-", "_")
+	pairSplit := strings.Split(pair, ", ")
+	if len(pairSplit) < 4 {
+		fmt.Println("Invalid pair format:", pair)
+		return
 	}
-	// Build the latest backup time metric
-	latestBackupTimeMetric := ensureMetricExists("spdata_latestbackuptime")
-	if latestBackupTime == "" {
-		latestBackupTimeMetric.WithLabelValues("0", "latestbackup", "").Set(0)
+
+	metricName := "spdata_" + strings.ToLower(pairSplit[0])
+	device := pairSplit[1]
+	name := strings.Join(pairSplit[2:len(pairSplit)-1], "-")
+	valueStr := pairSplit[len(pairSplit)-1]
+
+	gaugeVec := ensureMetricExists(metricName)
+	valueFloat, err := strconv.ParseFloat(valueStr, 64)
+	if err == nil {
+		gaugeVec.WithLabelValues(device, name, strconv.FormatInt(int64(valueFloat), 10)).Set(valueFloat)
 	} else {
-		latestBackupTimeMetric.WithLabelValues("0", "latestbackup", latestBackupTime).Set(1)
-	}
-
-	// Get the count of core files
-	fsmCount, totalCount, err := countCoresFiles()
-	// Build the core files count metric
-	coreFilesCountMetric := ensureMetricExists("spdata_corefilescount")
-	coreFilesCountMetric.WithLabelValues("0", "total", strconv.Itoa(totalCount)).Set(float64(totalCount))
-	coreFilesCountMetric.WithLabelValues("0", "fsm", strconv.Itoa(fsmCount)).Set(float64(fsmCount))
-
-	// Get NTP stats
-	ntpServer, ntpStatus, timeZone, err := getNTPStats()
-	if err != nil {
-		fmt.Println("Error getting NTP stats:", err)
-	}
-	// Build the NTP metrics
-	ntpServerMetric := ensureMetricExists("spdata_ntpserver")
-	// if data is empty, set the metric to 0
-	if ntpServer == "" {
-		ntpServerMetric.WithLabelValues("0", "ntpserver", "").Set(0)
-	} else {
-		ntpServerMetric.WithLabelValues("0", "ntpserver", ntpServer).Set(1)
-	}
-	if ntpStatus == "" {
-		ntpServerMetric.WithLabelValues("0", "ntpstatus", "").Set(0)
-	} else if ntpStatus == "Off" {
-		ntpServerMetric.WithLabelValues("0", "ntpstatus", ntpStatus).Set(0)
-	} else {
-		ntpServerMetric.WithLabelValues("0", "ntpstatus", ntpStatus).Set(1)
-	}
-	if timeZone == "" {
-		ntpServerMetric.WithLabelValues("0", "timezone", "").Set(0)
-	} else {
-		ntpServerMetric.WithLabelValues("0", "timezone", timeZone).Set(1)
-	}
-
-	// Register Prometheus metrics handler and start HTTP server
-	http.Handle("/metrics", promhttp.Handler())
-	addr := fmt.Sprintf(":%d", config.Port)
-	fmt.Printf("Starting server on port %d\n", config.Port)
-	if err := http.ListenAndServe(addr, nil); err != nil {
-		fmt.Println("Error starting HTTP server:", err)
+		gaugeVec.WithLabelValues(device, name, valueStr).Set(1)
 	}
 }
 
