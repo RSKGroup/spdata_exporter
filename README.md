@@ -117,6 +117,7 @@ Additionally, this tool exports the following data:
 - Core File Count and Cores from FSM
 - cvlabel -l|wc -l count
 - Latest Time Machine backup time
+- NTP date including NTP Server, Status, and Time Zone
 <pre>
 # HELP spdata_corefilescount Metric spdata_corefilescount dynamically created
 # TYPE spdata_corefilescount gauge
@@ -128,6 +129,11 @@ spdata_cvlabelcount{device="0",name="cvlabel",value="22"} 22
 # HELP spdata_latestbackuptime Metric spdata_latestbackuptime dynamically created
 # TYPE spdata_latestbackuptime gauge
 spdata_latestbackuptime{device="0",name="latestbackup",value="2024-02-19-111614"} 1
+# HELP spdata_ntpserver Metric spdata_ntpserver dynamically created
+# TYPE spdata_ntpserver gauge
+spdata_ntpserver{device="0",name="ntpserver",value="time.apple.com"} 1
+spdata_ntpserver{device="0",name="ntpstatus",value="On"} 1
+spdata_ntpserver{device="0",name="timezone",value="America/Los_Angeles"} 1
 </pre>
 
 Contribute
