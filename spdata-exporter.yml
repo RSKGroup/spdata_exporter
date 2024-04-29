@@ -3,6 +3,7 @@ data_types:
   - SPHardwareDataType
   - SPStorageDataType
   - SPDisplaysDataType
+  - SPSoftwareDataType
 #  - SPParallelATADataType
 #  - SPUniversalAccessDataType
 #  - SPSecureElementDataType
@@ -43,7 +44,6 @@ data_types:
 #  - SPSASDataType
 #  - SPSerialATADataType
 #  - SPSPIDataType
-  - SPSoftwareDataType
 #  - SPStartupItemDataType
 #  - SPSyncServicesDataType
 #  - SPThunderboltDataType

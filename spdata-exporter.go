@@ -54,13 +54,13 @@ func init() {
 func main() {
 
 	// Define flags
-	configFile := flag.String("config", "spdata_exporter.yml", "Path to the config file")
+	configFile := flag.String("config", "/usr/local/etc/spdata-exporter.yml", "Path to the config file")
 	flag.Parse()
 
 	// Load the configuration file
 	configData, err := os.ReadFile(*configFile)
 	if err != nil {
-		fmt.Println("Error reading the config file:", err)
+		fmt.Printf("Error reading the config file: %s\n", err)
 		os.Exit(1)
 	}
 
@@ -71,8 +71,8 @@ func main() {
 		fmt.Println("Error parsing the config file:", err)
 		os.Exit(1)
 	}
-	// Setup HTTP server
-	http.HandleFunc("/metrics", updateMetricsHandler)
+	// Setup HTTP server with config
+	http.HandleFunc("/metrics", updateMetricsHandler(&config))
 	addr := fmt.Sprintf(":%d", config.Port)
 	fmt.Printf("Starting server on %s\n", addr)
 	if err := http.ListenAndServe(addr, nil); err != nil {
@@ -80,51 +80,39 @@ func main() {
 	}
 }
 
-// updateMetricsHandler is an HTTP handler that updates the metrics and serves them
-func updateMetricsHandler(w http.ResponseWriter, r *http.Request) {
-	// Clear previous metric values
-	dynamicMetrics.Range(func(key, value interface{}) bool {
-		dynamicMetrics.Delete(key)
-		prometheus.Unregister(value.(*prometheus.GaugeVec))
-		return true
-	})
+// updateMetricsHandler returns an HTTP handler function that uses the provided configuration.
+func updateMetricsHandler(config *Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Clear previous metric values
+		dynamicMetrics.Range(func(key, value interface{}) bool {
+			dynamicMetrics.Delete(key)
+			prometheus.Unregister(value.(*prometheus.GaugeVec))
+			return true
+		})
 
-	// Load configuration and run data collection
-	configData, err := os.ReadFile("spdata_exporter.yml")
-	if err != nil {
-		http.Error(w, "Error reading the config file", http.StatusInternalServerError)
-		return
-	}
-
-	var config Config
-	err = yaml.Unmarshal(configData, &config)
-	if err != nil {
-		http.Error(w, "Error parsing the config file", http.StatusInternalServerError)
-		return
-	}
-
-	dataTypeOutputs := make(map[string]string)
-	for _, dataType := range config.DataTypes {
-		dataTypeOutputs[dataType] = getSystemProfilerData(dataType)
-	}
-
-	var pairs []string
-	for _, output := range dataTypeOutputs {
-		dataPairs, err := ConvertJsonToPairs(output)
-		if err != nil {
-			http.Error(w, "Error converting JSON to pairs", http.StatusInternalServerError)
-			return
+		dataTypeOutputs := make(map[string]string)
+		for _, dataType := range config.DataTypes {
+			dataTypeOutputs[dataType] = getSystemProfilerData(dataType)
 		}
-		pairs = append(pairs, dataPairs...)
-	}
 
-	// Process pairs and update metrics
-	for _, pair := range pairs {
-		processMetric(pair)
-	}
+		var pairs []string
+		for _, output := range dataTypeOutputs {
+			dataPairs, err := ConvertJsonToPairs(output)
+			if err != nil {
+				http.Error(w, "Error converting JSON to pairs", http.StatusInternalServerError)
+				return
+			}
+			pairs = append(pairs, dataPairs...)
+		}
 
-	// After updating the metrics, serve them
-	promhttp.Handler().ServeHTTP(w, r)
+		// Process pairs and update metrics
+		for _, pair := range pairs {
+			processMetric(pair)
+		}
+
+		// After updating the metrics, serve them
+		promhttp.Handler().ServeHTTP(w, r)
+	}
 }
 
 // Factor out the metric processing into a separate function
