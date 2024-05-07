@@ -19,6 +19,24 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+// Define the version and the new Prometheus gauge metric
+var version = "1.0502.0"
+var buildInfo = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "spdata_version",
+		Help: "Build information for the spdata exporter, including version.",
+	},
+	[]string{"version"}, // Version as a label
+)
+
+func init() {
+	// Register the gauge vector with Prometheus's default registry
+	prometheus.MustRegister(buildInfo)
+
+	// Set the gauge with the label of the version
+	buildInfo.WithLabelValues(version).Set(1) // Setting to 1 just to instantiate this metric with the version label
+}
+
 // Config represents the configuration file
 type Config struct {
 	Port      int      `yaml:"port"`
@@ -42,6 +60,7 @@ var (
 	)
 )
 
+// Define a sync.Map to store dynamic metrics
 var dynamicMetrics = sync.Map{}
 
 // Register the Prometheus metric
